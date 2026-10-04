@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "postinstall": "prisma generate --schema=prisma/schema.prisma",
     "dev": "concurrently -k \"pnpm --filter @scratchly/api dev\" \"pnpm --filter @scratchly/worker dev\" \"pnpm --filter @scratchly/web dev\"",
     "dev:api": "pnpm --filter @scratchly/api dev",
     "dev:worker": "pnpm --filter @scratchly/worker dev",
