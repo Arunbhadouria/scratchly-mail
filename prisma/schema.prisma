@@ -1,0 +1,366 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// -----------------------------------------------------------------------------
+// Multi-Tenancy & User Authorization
+// -----------------------------------------------------------------------------
+
+model User {
+  id                     String             @id @default(uuid())
+  email                  String             @unique
+  passwordHash           String?
+  name                   String?
+  avatarUrl              String?
+  externalScratchlyUserId String?           @unique
+  memberships            TenantMembership[]
+  emailConnections       EmailConnection[]
+  auditLogs              AuditLog[]
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+
+  @@index([email])
+}
+
+model Tenant {
+  id                 String             @id @default(uuid())
+  name               String
+  slug               String             @unique
+  memberships        TenantMembership[]
+  emailConnections   EmailConnection[]
+  contacts           Contact[]
+  templates          EmailTemplate[]
+  campaigns          Campaign[]
+  campaignRecipients CampaignRecipient[]
+  emailEvents        EmailEvent[]
+  suppressions       Suppression[]
+  auditLogs          AuditLog[]
+  queueJobs          QueueJob[]
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@index([slug])
+}
+
+enum TenantRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+model TenantMembership {
+  id        String     @id @default(uuid())
+  tenantId  String
+  userId    String
+  role      TenantRole @default(MEMBER)
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@unique([tenantId, userId])
+  @@index([userId])
+  @@index([tenantId])
+}
+
+// -----------------------------------------------------------------------------
+// Gmail & Provider Email Connections
+// -----------------------------------------------------------------------------
+
+enum EmailProvider {
+  GMAIL
+  OUTLOOK
+}
+
+enum ConnectionStatus {
+  CONNECTED
+  REVOKED
+  EXPIRED
+  DISCONNECTED
+  REAUTH_REQUIRED
+}
+
+model EmailConnection {
+  id                    String           @id @default(uuid())
+  tenantId              String
+  userId                String
+  provider              EmailProvider    @default(GMAIL)
+  emailAddress          String
+  encryptedAccessToken  String
+  encryptedRefreshToken String?
+  tokenExpiresAt        DateTime?
+  scopes                String[]         @default([])
+  status                ConnectionStatus @default(CONNECTED)
+  historyId             String?
+  lastSyncAt            DateTime?
+  tenant                Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user                  User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  @@unique([tenantId, emailAddress])
+  @@index([tenantId, userId])
+  @@index([emailAddress])
+}
+
+// -----------------------------------------------------------------------------
+// Contacts & Suppression Engine
+// -----------------------------------------------------------------------------
+
+enum ContactStatus {
+  ACTIVE
+  UNSUBSCRIBED
+  BOUNCED
+  COMPLAINED
+}
+
+model Contact {
+  id                  String              @id @default(uuid())
+  tenantId            String
+  email               String
+  firstName           String?
+  lastName            String?
+  company             String?
+  phone               String?
+  status              ContactStatus       @default(ACTIVE)
+  source              String?             @default("manual") // manual, csv_import, scratchly_crm, api
+  consentGivenAt      DateTime?
+  consentProof        String?
+  externalScratchlyId String?
+  customFields        Json?               @default("{}")
+  tenant              Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  campaignRecipients  CampaignRecipient[]
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  @@unique([tenantId, email])
+  @@index([tenantId, status])
+  @@index([tenantId, email])
+  @@index([externalScratchlyId])
+}
+
+enum SuppressionReason {
+  BOUNCE
+  COMPLAINT
+  MANUAL
+  UNSUBSCRIBE
+}
+
+model Suppression {
+  id               String            @id @default(uuid())
+  tenantId         String
+  email            String
+  reason           SuppressionReason
+  sourceCampaignId String?
+  notes            String?
+  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdAt        DateTime          @default(now())
+
+  @@unique([tenantId, email])
+  @@index([tenantId, email])
+}
+
+// -----------------------------------------------------------------------------
+// Templates & Content
+// -----------------------------------------------------------------------------
+
+model EmailTemplate {
+  id          String     @id @default(uuid())
+  tenantId    String
+  name        String
+  subject     String
+  bodyHtml    String     @db.Text
+  bodyText    String?    @db.Text
+  previewText String?
+  createdById String?
+  tenant      Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  campaigns   Campaign[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@index([tenantId])
+}
+
+// -----------------------------------------------------------------------------
+// Bulk Campaigns & Recipient Delivery Engine
+// -----------------------------------------------------------------------------
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  QUEUED
+  IN_PROGRESS
+  PAUSED
+  COMPLETED
+  CANCELLED
+}
+
+enum CampaignSendingProvider {
+  SES_BULK
+  DRY_RUN
+}
+
+model Campaign {
+  id              String                  @id @default(uuid())
+  tenantId        String
+  name            String
+  subject         String
+  templateId      String?
+  status          CampaignStatus          @default(DRAFT)
+  provider        CampaignSendingProvider @default(DRY_RUN)
+  totalRecipients Int                     @default(0)
+  sentCount       Int                     @default(0)
+  deliveredCount  Int                     @default(0)
+  bounceCount     Int                     @default(0)
+  complaintCount  Int                     @default(0)
+  failedCount     Int                     @default(0)
+  scheduledAt     DateTime?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  createdById     String?
+  tenant          Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  template        EmailTemplate?          @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  recipients      CampaignRecipient[]
+  events          EmailEvent[]
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  @@index([tenantId, status])
+}
+
+enum RecipientStatus {
+  QUEUED
+  SENDING
+  SENT
+  ACCEPTED
+  DELIVERED
+  BOUNCED
+  COMPLAINED
+  FAILED
+  UNSUBSCRIBED
+  CANCELLED
+  SUPPRESSED
+}
+
+model CampaignRecipient {
+  id                  String          @id @default(uuid())
+  tenantId            String
+  campaignId          String
+  contactId           String?
+  email               String
+  personalizedSubject String
+  personalizedHtml    String          @db.Text
+  personalizedText    String?         @db.Text
+  status              RecipientStatus @default(QUEUED)
+  attemptCount        Int             @default(0)
+  maxAttempts         Int             @default(3)
+  lastError           String?
+  providerMessageId   String?
+  idempotencyKey      String          @unique
+  sentAt              DateTime?
+  deliveredAt         DateTime?
+  tenant              Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  campaign            Campaign        @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contact             Contact?        @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  events              EmailEvent[]
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  @@index([campaignId, status])
+  @@index([tenantId, email])
+  @@index([providerMessageId])
+}
+
+// -----------------------------------------------------------------------------
+// Delivery Events & Webhook Ingestion
+// -----------------------------------------------------------------------------
+
+enum EmailEventType {
+  QUEUED
+  SENDING
+  ACCEPTED
+  DELIVERED
+  BOUNCE
+  COMPLAINT
+  FAILURE
+  UNSUBSCRIBE
+  CLICK
+  OPEN
+}
+
+model EmailEvent {
+  id                String            @id @default(uuid())
+  tenantId          String
+  campaignId        String?
+  recipientId       String?
+  eventType         EmailEventType
+  eventData         Json              @default("{}")
+  providerMessageId String?
+  occurredAt        DateTime          @default(now())
+  tenant            Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  campaign          Campaign?         @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  recipient         CampaignRecipient? @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  createdAt         DateTime          @default(now())
+
+  @@index([campaignId, eventType])
+  @@index([recipientId])
+  @@index([providerMessageId])
+}
+
+// -----------------------------------------------------------------------------
+// Auditing & Compliance
+// -----------------------------------------------------------------------------
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  tenantId   String
+  userId     String?
+  action     String
+  entityType String
+  entityId   String?
+  details    Json?    @default("{}")
+  ipAddress  String?
+  userAgent  String?
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt  DateTime @default(now())
+
+  @@index([tenantId, createdAt])
+}
+
+// -----------------------------------------------------------------------------
+// Database-Backed Job Queue (Zero-cost Redis alternative)
+// -----------------------------------------------------------------------------
+
+enum JobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model QueueJob {
+  id          String    @id @default(uuid())
+  tenantId    String?
+  queueName   String    @default("bulk-campaign-delivery")
+  payload     Json
+  status      JobStatus @default(PENDING)
+  priority    Int       @default(0) // Higher number = higher priority
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(3)
+  runAt       DateTime  @default(now())
+  lockedAt    DateTime?
+  lockedBy    String?
+  lastError   String?
+  tenant      Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([status, runAt, priority])
+  @@index([queueName, status])
+}
