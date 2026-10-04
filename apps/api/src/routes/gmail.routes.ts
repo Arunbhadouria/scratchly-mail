@@ -23,7 +23,7 @@ gmailRouter.get('/connect', requireAuth, (req, res, next) => {
   try {
     const url = GmailService.getAuthorizationUrl(req.user!.tenantId, req.user!.id);
     if (req.headers.accept?.includes('application/json') || req.query.format === 'json') {
-      res.json({ success: true, data: { url } });
+      res.json({ success: true, data: { url, authUrl: url } });
     } else {
       res.redirect(url);
     }

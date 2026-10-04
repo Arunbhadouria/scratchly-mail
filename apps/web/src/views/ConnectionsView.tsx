@@ -177,11 +177,16 @@ export const ConnectionsView: React.FC = () => {
   const handleConnectGoogle = async () => {
     playHapticClick();
     try {
-      const res = await api.get<{ authUrl: string; state: string }>('/integrations/gmail/connect');
-      if (res.success && res.data?.authUrl) {
-        window.location.href = res.data.authUrl;
+      const res = await api.get<{ authUrl?: string; url?: string }>('/integrations/gmail/connect');
+      const targetUrl = res.data?.authUrl || res.data?.url;
+      if (res.success && targetUrl) {
+        window.location.href = targetUrl;
       } else {
-        alert(res.error || 'Failed to initialize Google OAuth flow');
+        alert(
+          res.error ||
+          (res as any).message ||
+          'Failed to initialize Google OAuth flow. Please ensure GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are configured in your backend environment variables.'
+        );
       }
     } catch (err: any) {
       alert(err.message || 'Error connecting to Google OAuth');
