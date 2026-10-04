@@ -1,0 +1,10 @@
+{
+  "buildCommand": "pnpm --filter @scratchly/shared build && pnpm --filter @scratchly/web build",
+  "outputDirectory": "apps/web/dist",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
