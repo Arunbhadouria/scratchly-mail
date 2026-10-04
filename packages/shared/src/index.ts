@@ -185,6 +185,7 @@ export type CampaignUpdateInput = z.infer<typeof CampaignUpdateSchema>;
 export const CampaignLaunchSchema = z.object({
   confirmRecipientCount: z.number().int().min(0).default(0),
   dryRun: z.boolean().default(false),
+  provider: z.enum(['SES_BULK', 'DRY_RUN']).optional(),
 });
 
 export type CampaignLaunchInput = z.infer<typeof CampaignLaunchSchema>;

@@ -341,9 +341,10 @@ export class CampaignService {
       };
     }
 
-    const providerToUse = input.dryRun
+    const isDryRun = input.dryRun || input.provider === 'DRY_RUN';
+    const providerToUse = isDryRun
       ? 'DRY_RUN'
-      : (campaign.provider === 'SES_BULK' || env.CAMPAIGN_SENDING_MODE === 'ses' || !!env.AWS_ACCESS_KEY_ID
+      : (input.provider === 'SES_BULK' || campaign.provider === 'SES_BULK' || env.CAMPAIGN_SENDING_MODE === 'ses' || !!env.AWS_ACCESS_KEY_ID
         ? 'SES_BULK'
         : 'DRY_RUN');
 

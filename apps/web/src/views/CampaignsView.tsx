@@ -177,9 +177,13 @@ export const CampaignsView: React.FC = () => {
         setCreatedCampaignId(campId);
       }
 
-      const preflightRes = await api.post<AudiencePreflight>(`/campaigns/${campId}/preflight`, {
+      let preflightRes = await api.post<AudiencePreflight>(`/campaigns/${campId}/preflight`, {
         filter: {},
       });
+
+      if (!preflightRes.success) {
+        preflightRes = await api.get<AudiencePreflight>(`/campaigns/${campId}/audience`);
+      }
 
       if (preflightRes.success && preflightRes.data) {
         setPreflightData(preflightRes.data);
@@ -201,6 +205,8 @@ export const CampaignsView: React.FC = () => {
     try {
       const res = await api.post<{ count: number }>(`/campaigns/${createdCampaignId}/launch`, {
         provider: wizardForm.provider,
+        dryRun: wizardForm.provider === 'DRY_RUN',
+        confirmRecipientCount: preflightData?.finalSendableCount || 0,
       });
 
       if (res.success) {

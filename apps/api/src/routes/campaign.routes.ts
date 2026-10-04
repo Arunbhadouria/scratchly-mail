@@ -71,6 +71,24 @@ campaignRouter.get('/:id/audience', async (req, res, next) => {
   }
 });
 
+campaignRouter.get('/:id/preflight', async (req, res, next) => {
+  try {
+    const audience = await CampaignService.previewAudience(req.user!.tenantId, req.params.id as string);
+    res.json({ success: true, data: audience });
+  } catch (err) {
+    next(err);
+  }
+});
+
+campaignRouter.post('/:id/preflight', async (req, res, next) => {
+  try {
+    const audience = await CampaignService.previewAudience(req.user!.tenantId, req.params.id as string);
+    res.json({ success: true, data: audience });
+  } catch (err) {
+    next(err);
+  }
+});
+
 campaignRouter.post('/:id/launch', validateBody(CampaignLaunchSchema), async (req, res, next) => {
   try {
     const result = await CampaignService.launchCampaign(req.user!.tenantId, req.params.id as string, req.user!.id, req.body);
