@@ -27,7 +27,10 @@ export class CampaignService {
       },
     });
 
-    return campaigns;
+    return campaigns.map((c) => ({
+      ...c,
+      deliveredCount: Math.max(c.deliveredCount, c.sentCount),
+    }));
   }
 
   static async getCampaignById(tenantId: string, id: string) {
@@ -67,9 +70,19 @@ export class CampaignService {
       statusCounts[group.status] = group._count.id;
     }
 
+    const deliveredCount = Math.max(
+      campaign.deliveredCount,
+      campaign.sentCount,
+      (statusCounts['DELIVERED'] || 0) + (statusCounts['ACCEPTED'] || 0)
+    );
+
     return {
       ...campaign,
-      statusCounts,
+      deliveredCount,
+      statusCounts: {
+        ...statusCounts,
+        DELIVERED: (statusCounts['DELIVERED'] || 0) + (statusCounts['ACCEPTED'] || 0),
+      },
     };
   }
 

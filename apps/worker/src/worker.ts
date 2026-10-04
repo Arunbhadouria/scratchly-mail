@@ -200,10 +200,10 @@ export class CampaignDeliveryWorker {
         prisma.campaignRecipient.update({
           where: { id: recipient.id },
           data: {
-            status: useSES ? 'ACCEPTED' : 'DELIVERED',
+            status: 'DELIVERED',
             providerMessageId: result.providerMessageId,
             sentAt: new Date(),
-            deliveredAt: useSES ? undefined : new Date(),
+            deliveredAt: new Date(),
           },
         }),
         prisma.emailEvent.create({
@@ -211,7 +211,7 @@ export class CampaignDeliveryWorker {
             tenantId: recipient.tenantId,
             campaignId: payload.campaignId,
             recipientId: recipient.id,
-            eventType: useSES ? 'ACCEPTED' : 'DELIVERED',
+            eventType: 'DELIVERED',
             providerMessageId: result.providerMessageId,
             eventData: result.rawResponse || {},
           },
@@ -220,7 +220,7 @@ export class CampaignDeliveryWorker {
           where: { id: payload.campaignId },
           data: {
             sentCount: { increment: 1 },
-            ...(useSES ? {} : { deliveredCount: { increment: 1 } }),
+            deliveredCount: { increment: 1 },
           },
         }),
         prisma.queueJob.update({

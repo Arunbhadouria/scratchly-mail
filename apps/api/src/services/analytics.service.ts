@@ -158,7 +158,7 @@ export class AnalyticsService {
         templateName: c.template?.name || 'Custom Message',
         totalRecipients: c.totalRecipients || c._count.recipients,
         sentCount: c.sentCount,
-        deliveredCount: c.deliveredCount,
+        deliveredCount: Math.max(c.deliveredCount, c.sentCount),
         createdAt: c.createdAt,
       })),
       recentActivity: activityItems,

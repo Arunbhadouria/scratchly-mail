@@ -363,7 +363,7 @@ export const CampaignsView: React.FC = () => {
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:gap-4">
           {campaigns.map((c) => {
-            const delivered = c.deliveredCount;
+            const delivered = Math.max(c.deliveredCount, c.sentCount || 0);
             const total = c.totalRecipients || 1;
             const progressPct = c.status === 'COMPLETED' ? 100 : Math.min(100, Math.round((delivered / total) * 100));
 
@@ -842,7 +842,9 @@ export const CampaignsView: React.FC = () => {
               </div>
               <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-ink-900 border border-slate-200/80 dark:border-slate-800">
                 <span className="text-[10px] text-slate-400 block font-semibold">Delivered</span>
-                <span className="text-base font-extrabold text-emerald-600 dark:text-emerald-400">{detailCampaign.deliveredCount}</span>
+                <span className="text-base font-extrabold text-emerald-600 dark:text-emerald-400">
+                  {Math.max(detailCampaign.deliveredCount, detailCampaign.sentCount || 0)}
+                </span>
               </div>
               <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-ink-900 border border-slate-200/80 dark:border-slate-800">
                 <span className="text-[10px] text-slate-400 block font-semibold">Total Recipients</span>
@@ -868,7 +870,7 @@ export const CampaignsView: React.FC = () => {
                     Sending: <strong>{detailCampaign.statusCounts['SENDING'] || 0}</strong>
                   </span>
                   <span className="px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-semibold">
-                    Delivered: <strong>{detailCampaign.statusCounts['DELIVERED'] || 0}</strong>
+                    Delivered: <strong>{(detailCampaign.statusCounts['DELIVERED'] || 0) + (detailCampaign.statusCounts['ACCEPTED'] || 0)}</strong>
                   </span>
                   <span className="px-2.5 py-1 rounded-lg bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 font-semibold">
                     Failed: <strong>{detailCampaign.statusCounts['FAILED'] || 0}</strong>

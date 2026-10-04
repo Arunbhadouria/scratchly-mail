@@ -365,7 +365,7 @@ export const OverviewView: React.FC<{ setActiveTab: (tab: NavTab) => void }> = (
                         </span>
                       </td>
                       <td className="px-4 py-3.5">
-                        <span className="font-extrabold text-ink-900 dark:text-white">{c.deliveredCount}</span>
+                        <span className="font-extrabold text-ink-900 dark:text-white">{Math.max(c.deliveredCount, c.sentCount || 0)}</span>
                         <span className="text-slate-400"> / {c.totalRecipients}</span>
                       </td>
                       <td className="px-4 py-3.5">
