@@ -159,10 +159,12 @@ export const CampaignsView: React.FC = () => {
     try {
       let campId = createdCampaignId;
       if (!campId) {
+        const selectedTemplate = templates.find((t) => t.id === wizardForm.templateId);
+        const resolvedSubject = wizardForm.subject.trim() || selectedTemplate?.subject || wizardForm.name.trim();
         const createRes = await api.post<{ id: string }>('/campaigns', {
-          name: wizardForm.name,
-          subject: wizardForm.subject || undefined,
-          templateId: wizardForm.templateId,
+          name: wizardForm.name.trim(),
+          subject: resolvedSubject,
+          templateId: wizardForm.templateId && wizardForm.templateId.trim() !== '' ? wizardForm.templateId : undefined,
           provider: wizardForm.provider,
         });
 

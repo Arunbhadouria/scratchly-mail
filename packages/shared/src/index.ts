@@ -157,8 +157,14 @@ export type TemplatePreviewInput = z.infer<typeof TemplatePreviewSchema>;
 
 export const CampaignCreateSchema = z.object({
   name: z.string().min(1, 'Campaign name is required').max(150),
-  subject: z.string().min(1, 'Subject is required').max(300),
-  templateId: z.string().uuid().optional().nullable(),
+  subject: z.preprocess(
+    (val) => (typeof val === 'string' && val.trim() === '' ? undefined : val),
+    z.string().max(300).optional().nullable()
+  ),
+  templateId: z.preprocess(
+    (val) => (val === '' ? null : val),
+    z.string().uuid().optional().nullable()
+  ),
   bodyHtml: z.string().optional().nullable(),
   bodyText: z.string().optional().nullable(),
   provider: z.enum(['SES_BULK', 'DRY_RUN']).default('DRY_RUN'),
