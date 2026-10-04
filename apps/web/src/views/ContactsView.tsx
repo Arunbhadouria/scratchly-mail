@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { api } from '../lib/api';
 import { Modal } from '../components/common/Modal';
 import { EmptyState } from '../components/common/EmptyState';
@@ -20,6 +20,9 @@ import {
   Ban,
   RotateCcw,
   Sparkles,
+  UploadCloud,
+  FileText,
+  X,
 } from 'lucide-react';
 
 interface Contact {
@@ -89,6 +92,11 @@ export const ContactsView: React.FC = () => {
 
   // CSV Import Modal & Column Mapping
   const [isImportOpen, setIsImportOpen] = useState(false);
+  const [importMode, setImportMode] = useState<'upload' | 'paste'>('upload');
+  const [uploadedFile, setUploadedFile] = useState<{ name: string; size: number } | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragError, setDragError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [csvText, setCsvText] = useState('');
   const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
   const [csvRawRows, setCsvRawRows] = useState<string[][]>([]);
@@ -233,11 +241,33 @@ export const ContactsView: React.FC = () => {
     }
   };
 
-  // CSV Parsing & Column Mapping
-  const handleCsvChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const text = e.target.value;
-    setCsvText(text);
+  // CSV Parsing, Drag & Drop & Column Mapping
+  const formatFileSize = (bytes: number): string => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
 
+  const parseCsvLine = (line: string, delimiter: string = ','): string[] => {
+    const result: string[] = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (char === '"' || char === "'") {
+        inQuotes = !inQuotes;
+      } else if (char === delimiter && !inQuotes) {
+        result.push(current.trim().replace(/^["']|["']$/g, ''));
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    result.push(current.trim().replace(/^["']|["']$/g, ''));
+    return result;
+  };
+
+  const processCsvContent = (text: string) => {
     const lines = text.trim().split(/\r?\n/).filter(Boolean);
     if (lines.length < 2) {
       setCsvHeaders([]);
@@ -245,10 +275,15 @@ export const ContactsView: React.FC = () => {
       return;
     }
 
-    const headers = lines[0].split(',').map((h) => h.trim().replace(/^["']|["']$/g, ''));
+    const firstLine = lines[0];
+    const commaCount = (firstLine.match(/,/g) || []).length;
+    const semicolonCount = (firstLine.match(/;/g) || []).length;
+    const delimiter = semicolonCount > commaCount ? ';' : ',';
+
+    const headers = parseCsvLine(firstLine, delimiter);
     setCsvHeaders(headers);
 
-    const rawRows = lines.slice(1).map((l) => l.split(',').map((c) => c.trim().replace(/^["']|["']$/g, '')));
+    const rawRows = lines.slice(1).map((l) => parseCsvLine(l, delimiter));
     setCsvRawRows(rawRows);
 
     // Auto-detect columns
@@ -262,6 +297,68 @@ export const ContactsView: React.FC = () => {
       else if (lower.includes('phone') && !initialMapping.phone) initialMapping.phone = h;
     });
     setColumnMapping(initialMapping);
+  };
+
+  const handleCsvChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const text = e.target.value;
+    setCsvText(text);
+    processCsvContent(text);
+  };
+
+  const processFile = (file: File) => {
+    const isCsvOrTxt =
+      file.name.endsWith('.csv') ||
+      file.name.endsWith('.txt') ||
+      file.type === 'text/csv' ||
+      file.type === 'text/plain';
+
+    if (!isCsvOrTxt) {
+      setDragError('Please select a valid CSV (.csv) or text (.txt) file');
+      return;
+    }
+
+    setDragError(null);
+    setUploadedFile({ name: file.name, size: file.size });
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = (event.target?.result as string) || '';
+      setCsvText(text);
+      processCsvContent(text);
+    };
+    reader.onerror = () => {
+      setDragError('Failed to read file contents. Please try again.');
+    };
+    reader.readAsText(file);
+  };
+
+  const handleFileDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    setDragError(null);
+
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      processFile(files[0]);
+    }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      processFile(e.target.files[0]);
+    }
+  };
+
+  const handleRemoveFile = () => {
+    setUploadedFile(null);
+    setCsvText('');
+    setCsvHeaders([]);
+    setCsvRawRows([]);
+    setDragError(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
   };
 
   const mappedContacts = useMemo(() => {
@@ -298,9 +395,7 @@ export const ContactsView: React.FC = () => {
       setImportResult(res.data);
       setTimeout(() => {
         setIsImportOpen(false);
-        setCsvText('');
-        setCsvHeaders([]);
-        setCsvRawRows([]);
+        handleRemoveFile();
         setImportResult(null);
         loadContacts();
       }, 1500);
@@ -851,22 +946,153 @@ export const ContactsView: React.FC = () => {
       </Modal>
 
       {/* CSV Import Modal with Column Mapping */}
-      <Modal isOpen={isImportOpen} onClose={() => setIsImportOpen(false)} title="Import Contacts via CSV">
+      <Modal
+        isOpen={isImportOpen}
+        onClose={() => {
+          setIsImportOpen(false);
+          handleRemoveFile();
+        }}
+        title="Import Contacts via CSV"
+      >
         <div className="space-y-4">
           <p className="text-xs text-slate-600 dark:text-slate-300 font-medium">
-            Paste comma-separated values (CSV) with headers. Map your columns to verify recipient details.
+            Upload a CSV spreadsheet or paste comma-separated values to automatically parse and map contact columns.
           </p>
 
-          <div>
-            <label className="block text-xs font-bold text-ink-900 dark:text-slate-300 mb-1">CSV Content</label>
-            <textarea
-              rows={4}
-              placeholder={`email,firstName,lastName,company,phone\nclaire@example.com,Claire,Dunphy,Pritchett Real Estate,+1 555-0101\nphil@example.com,Phil,Dunphy,Phil's Magic Realty,+1 555-0102`}
-              value={csvText}
-              onChange={handleCsvChange}
-              className="w-full p-3 font-mono text-[11px] rounded-xl bg-slate-50 dark:bg-ink-900 border border-slate-200 dark:border-slate-700 text-ink-900 dark:text-white focus:outline-none focus:border-scratchly-600"
-            />
+          {/* Mode Switcher Tabs */}
+          <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-100 dark:bg-ink-900 border border-slate-200/80 dark:border-slate-800">
+            <button
+              type="button"
+              onClick={() => setImportMode('upload')}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-bold transition-all ${
+                importMode === 'upload'
+                  ? 'bg-white dark:bg-ink-800 text-scratchly-600 dark:text-scratchly-400 shadow-sm'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-ink-900 dark:hover:text-white'
+              }`}
+            >
+              <UploadCloud className="w-3.5 h-3.5" /> Drag & Drop CSV
+            </button>
+            <button
+              type="button"
+              onClick={() => setImportMode('paste')}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-bold transition-all ${
+                importMode === 'paste'
+                  ? 'bg-white dark:bg-ink-800 text-scratchly-600 dark:text-scratchly-400 shadow-sm'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-ink-900 dark:hover:text-white'
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5" /> Paste Raw CSV
+            </button>
           </div>
+
+          {/* Hidden File Input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,text/csv,text/plain"
+            onChange={handleFileSelect}
+            className="hidden"
+          />
+
+          {importMode === 'upload' ? (
+            <div>
+              {!uploadedFile ? (
+                /* Drag & Drop Area */
+                <div
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setIsDragging(true);
+                  }}
+                  onDragLeave={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setIsDragging(false);
+                  }}
+                  onDrop={handleFileDrop}
+                  onClick={() => fileInputRef.current?.click()}
+                  className={`relative p-8 rounded-2xl border-2 border-dashed transition-all cursor-pointer flex flex-col items-center justify-center text-center group ${
+                    isDragging
+                      ? 'border-scratchly-500 bg-scratchly-50/70 dark:bg-scratchly-950/50 scale-[1.01]'
+                      : 'border-slate-300 dark:border-slate-700 bg-slate-50/80 dark:bg-ink-900/60 hover:border-scratchly-400 hover:bg-slate-100/60 dark:hover:bg-ink-900'
+                  }`}
+                >
+                  <div
+                    className={`w-12 h-12 rounded-2xl flex items-center justify-center mb-3 transition-transform duration-300 group-hover:scale-110 ${
+                      isDragging
+                        ? 'bg-scratchly-500 text-white shadow-lg shadow-scratchly-500/30'
+                        : 'bg-scratchly-50 dark:bg-scratchly-950/60 text-scratchly-600 dark:text-scratchly-400 border border-scratchly-200 dark:border-scratchly-800'
+                    }`}
+                  >
+                    <UploadCloud className="w-6 h-6" />
+                  </div>
+
+                  <span className="text-xs font-bold text-ink-900 dark:text-white">
+                    {isDragging ? 'Drop your CSV file here' : 'Drag and drop your CSV file here, or click to browse'}
+                  </span>
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                    Supports standard <code className="text-slate-700 dark:text-slate-300 font-mono">.csv</code> or <code className="text-slate-700 dark:text-slate-300 font-mono">.txt</code> files
+                  </span>
+                </div>
+              ) : (
+                /* Uploaded File Chip / Card */
+                <div className="p-4 rounded-2xl bg-emerald-50/50 dark:bg-emerald-950/30 border border-emerald-200/80 dark:border-emerald-800/60 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-300 flex items-center justify-center shrink-0">
+                      <FileSpreadsheet className="w-5 h-5" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-xs font-bold text-ink-900 dark:text-white truncate">
+                        {uploadedFile.name}
+                      </div>
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                        <span>{formatFileSize(uploadedFile.size)}</span>
+                        <span>•</span>
+                        <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
+                          {csvRawRows.length} rows loaded
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-ink-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 text-slate-700 dark:text-slate-300 transition-all"
+                    >
+                      Replace
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleRemoveFile}
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all"
+                      title="Remove file"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {dragError && (
+                <div className="mt-2 text-xs text-rose-500 font-semibold flex items-center gap-1.5">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" /> {dragError}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div>
+              <label className="block text-xs font-bold text-ink-900 dark:text-slate-300 mb-1">CSV Content</label>
+              <textarea
+                rows={4}
+                placeholder={`email,firstName,lastName,company,phone\nclaire@example.com,Claire,Dunphy,Pritchett Real Estate,+1 555-0101\nphil@example.com,Phil,Dunphy,Phil's Magic Realty,+1 555-0102`}
+                value={csvText}
+                onChange={handleCsvChange}
+                className="w-full p-3 font-mono text-[11px] rounded-xl bg-slate-50 dark:bg-ink-900 border border-slate-200 dark:border-slate-700 text-ink-900 dark:text-white focus:outline-none focus:border-scratchly-600"
+              />
+            </div>
+          )}
 
           {csvHeaders.length > 0 && (
             <div className="p-4 rounded-2xl bg-slate-50 dark:bg-ink-900 border border-slate-200/80 dark:border-slate-800 space-y-3">
